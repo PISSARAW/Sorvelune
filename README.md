@@ -35,3 +35,13 @@ Le jeu est synthétique, les réponses sont immédiates et la graine figure dans
 ## Premier chantier à reprendre
 
 Conserver les décisions, probabilités de sélection et dates d’observation dans SQLite ou PostgreSQL. Ajouter des étiquettes retardées et mesurer la couverture d’un intervalle sur une série de simulations indépendantes.
+
+## Échantillonner une file de revue issue d’un exercice
+
+Le profil de revue consomme `review-input.v1` produit par le rejeu Calquory. La stratégie mixte combine les contrôles prioritaires et un tirage parmi les autres. Les observations inexploitables reçoivent la priorité la plus élevée, suivies des écarts puis des contrôles conformes. Chaque entrée indique sa probabilité d’inclusion et ses relations temporelles. Les verdicts humains restent à collecter.
+
+```sh
+python3 -m sorvelune --review --budget 2 --seed 42 constats.json
+```
+
+L’exercice complet se lance avec `make demo-suite` depuis [Horvessane](https://github.com/PISSARAW/Horvessane).
