@@ -1,0 +1,27 @@
+name: Qualité commune
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  quality:
+    name: Gouvernance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Vérifier les commits entrants
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          if [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+            BASE=$(git merge-base origin/main "$HEAD")
+          fi
+          git rev-list --reverse "$BASE..$HEAD" > "$RUNNER_TEMP/commits"
+          if [ ! -s "$RUNNER_TEMP/commits" ]; then echo "$HEAD" > "$RUNNER_TEMP/commits"; fi
+          while read -r sha; do sh quality/gate.sh commit "$sha"; done < "$RUNNER_TEMP/commits"
+      - name: Tester les refus de commit
+        run: python3 -m unittest discover -s quality/tests -v
