@@ -5,6 +5,7 @@ import random
 import re
 from pathlib import Path
 from statistics import fmean
+from typing import NamedTuple
 
 
 def generate(size, seed):
@@ -14,8 +15,14 @@ def generate(size, seed):
     return scores, truth
 
 
-def select(scores, budget, strategy, rng):
+class Plan(NamedTuple):
+    budget: int
+    strategy: str
+
+
+def select(scores, plan, rng):
     """Renvoie (id, probabilité d'inclusion) et la couverture du plan."""
+    budget, strategy = plan
     if not 1 <= budget <= len(scores):
         raise ValueError("budget hors population")
     ranked = sorted(scores, key=lambda i: (-scores[i], i))
@@ -36,18 +43,24 @@ def select(scores, budget, strategy, rng):
     return picks, bool(k or not tail)
 
 
-def evaluate(scores, truth, budget, repeats, seed):
+def draw_metrics(population, plan, rng):
+    scores, truth = population
+    picks, covers_all = select(scores, plan, rng)
+    found = sum(truth[i] for i, _ in picks)
+    estimate = sum(truth[i] / p for i, p in picks) if covers_all else None
+    return found, estimate
+
+
+def evaluate(scores, truth, config):
+    budget, repeats, seed = config["budget"], config["repeats"], config["seed"] + 1
     if not 1 <= repeats <= 10000:
         raise ValueError("nombre de répétitions hors limites")
     result = {}
     for strategy in ("top", "random", "mixed"):
         rng = random.Random(seed)
-        found, estimates = [], []
-        for _ in range(repeats):
-            picks, covers_all = select(scores, budget, strategy, rng)
-            found.append(sum(truth[i] for i, _ in picks))
-            if covers_all:
-                estimates.append(sum(truth[i] / inclusion for i, inclusion in picks))
+        trials = [draw_metrics((scores, truth), Plan(budget, strategy), rng) for _ in range(repeats)]
+        found = [value for value, _ in trials]
+        estimates = [value for _, value in trials if value is not None]
         # La vérité complète intervient seulement pour évaluer le simulateur.
         total = sum(truth.values())
         result[strategy] = {
@@ -66,24 +79,10 @@ def simulate(config):
     if not 1 <= config["size"] <= 100000:
         raise ValueError("taille hors limites")
     scores, truth = generate(config["size"], config["seed"])
-    return evaluate(scores, truth, config["budget"], config["repeats"], config["seed"] + 1)
+    return evaluate(scores, truth, config)
 
 
-def review(packet, budget, seed):
-    if packet["schema"] != "review-input.v1":
-        raise ValueError("version du rapport incompatible")
-    weights = {"clear": 0, "unknown": 3, "missing_document": 2, "digest_mismatch": 2,
-               "extra_access": 2, "missing_access": 2, "longer_access": 2, "shorter_access": 2}
-    outcomes = {}
-    for row in packet["observations"]:
-        key = row["id"]
-        if not re.fullmatch(r"(revaskel|mandoryve)-[1-9][0-9]*", key) or key in outcomes:
-            raise ValueError("identifiant invalide ou dupliqué")
-        if row["result"] not in weights:
-            raise ValueError("résultat inconnu")
-        outcomes[key] = row["result"]
-    scores = {key: weights[value] for key, value in outcomes.items()}
-    picks, coverage = select(scores, budget, "mixed", random.Random(seed))
+def review_context(packet, outcomes):
     context = {key: [] for key in outcomes}
     seen = set()
     for pair in packet["relations"]:
@@ -101,6 +100,25 @@ def review(packet, budget, seed):
         context[b].append({"relation": labels[1], "other": a})
     if len(seen) != len(outcomes) * (len(outcomes) - 1) // 2:
         raise ValueError("chronologie incomplète")
+    return context
+
+
+def review(packet, budget, seed):
+    if packet["schema"] != "review-input.v1":
+        raise ValueError("version du rapport incompatible")
+    weights = {"clear": 0, "unknown": 3, "missing_document": 2, "digest_mismatch": 2,
+               "extra_access": 2, "missing_access": 2, "longer_access": 2, "shorter_access": 2}
+    outcomes = {}
+    for row in packet["observations"]:
+        key = row["id"]
+        if not re.fullmatch(r"(revaskel|mandoryve)-[1-9][0-9]*", key) or key in outcomes:
+            raise ValueError("identifiant invalide ou dupliqué")
+        if row["result"] not in weights:
+            raise ValueError("résultat inconnu")
+        outcomes[key] = row["result"]
+    scores = {key: weights[value] for key, value in outcomes.items()}
+    picks, coverage = select(scores, Plan(budget, "mixed"), random.Random(seed))
+    context = review_context(packet, outcomes)
     return {"schema": "review-queue.v1", "strategy": "mixed", "population": len(scores),
             "budget": budget, "seed": seed, "full_sampling_coverage": coverage,
             "queue": [{"id": key, "result": outcomes[key], "inclusion_probability": probability,

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec sh quality/gate.sh message "$1"

@@ -45,3 +45,7 @@ python3 -m sorvelune --review --budget 2 --seed 42 constats.json
 ```
 
 L’exercice complet se lance avec `make demo-suite` depuis [Horvessane](https://github.com/PISSARAW/Horvessane).
+
+## Contribuer
+
+Activer les contrôles avant le premier commit avec `make setup`. Consulter [la documentation](docs/README.md) et [le guide de contribution](docs/guides/contribuer.md).
